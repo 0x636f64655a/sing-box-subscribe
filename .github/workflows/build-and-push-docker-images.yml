@@ -55,5 +55,5 @@ jobs:
           cache-from: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/${{ env.DOCKER_REPO }}:cache
           cache-to: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/${{ env.DOCKER_REPO }}:cache,mode=max
           tags: ${{ env.IMAGE_TAGS }}
-          platforms: linux/amd64,linux/arm64,linux/arm/v7
+          platforms: linux/amd64,linux/arm64
           push: true
