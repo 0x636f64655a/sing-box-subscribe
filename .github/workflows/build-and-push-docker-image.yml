@@ -51,6 +51,6 @@ jobs:
           context: .
           cache-from: type=registry,ref=$docker_user/$docker_repo:cache
           cache-to: type=registry,ref=$docker_user/$docker_repo:cache,mode=max
-          tags: $IMAGE_TAGS
+          tags: ${{ env.IMAGE_TAGS }}
           platforms: linux/amd64,linux/arm64,linux/arm/v7
           push: true
