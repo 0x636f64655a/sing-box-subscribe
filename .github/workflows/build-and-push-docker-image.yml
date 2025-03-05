@@ -8,22 +8,31 @@ on:
 jobs:
   docker:
     runs-on: ubuntu-latest
+    env:
+      docker_user: ${{ secrets.DOCKERHUB_USERNAME }}
+      docker_pass: ${{ secrets.DOCKERHUB_TOKEN }}
+      docker_repo: ${{ github.repository }}
+      release_version: ${{ github.event.release.tag_name }}
     steps:
       - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          username: $docker_user
+          password: $docker_pass
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
-      - name: Set up Docker Buildx
+
+      - name: Set Up Docker Buildx
         uses: docker/setup-buildx-action@v3
-      - name: Build and push
-        env:
-          docker_user: ${{ secrets.DOCKERHUB_USERNAME }}
-          docker_repo: ${{ github.repository }}
-          release_verion: ${{ github.event.release.tag_name }}
+
+      - name: Check Release Version Format
+        run: |
+          if [[ ! "$release_version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid release version format!" && exit 1
+          fi
+
+      - name: Build And Push
         uses: docker/build-push-action@v6
         with:
           push: true
-          tags: "$docker_user/$docker_repo:$release_verion,$docker_user/$docker_repo:latest"
+          tags: "$docker_user/$docker_repo:$release_version,$docker_user/$docker_repo:latest"
