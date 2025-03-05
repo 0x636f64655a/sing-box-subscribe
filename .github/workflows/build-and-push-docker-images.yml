@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  docker:
+  docker_build_and_push:
     runs-on: ubuntu-latest
     steps:
       - name: Login to Docker Hub
