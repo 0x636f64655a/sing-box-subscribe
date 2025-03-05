@@ -45,15 +45,15 @@ jobs:
             echo "IMAGE_TAGS=${{ github.repository }}:latest" >> $GITHUB_ENV
           else
             echo "Latest release found: $LATEST_RELEASE"
-            echo "IMAGE_TAGS=${{ secrets.DOCKERHUB_USERNAME }}/$DOCKER_REPO:$LATEST_RELEASE,${{ secrets.DOCKERHUB_USERNAME }}/$DOCKER_REPO:latest" >> $GITHUB_ENV
+            echo "IMAGE_TAGS=${{ secrets.DOCKERHUB_USERNAME }}/{{ env.DOCKER_REPO }}:$LATEST_RELEASE,${{ secrets.DOCKERHUB_USERNAME }}/{{ env.DOCKER_REPO }}:latest" >> $GITHUB_ENV
           fi
 
       - name: Build And Push
         uses: docker/build-push-action@v6
         with:
           context: .
-          cache-from: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/$DOCKER_REPO:cache
-          cache-to: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/$DOCKER_REPO:cache,mode=max
+          cache-from: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/{{ env.DOCKER_REPO }}:cache
+          cache-to: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/{{ env.DOCKER_REPO }}:cache,mode=max
           tags: ${{ env.IMAGE_TAGS }}
           platforms: linux/amd64,linux/arm64,linux/arm/v7
           push: true
