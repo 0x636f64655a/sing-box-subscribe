@@ -27,6 +27,9 @@ jobs:
       - name: Set Up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
       - name: Check for Existing Releases & Set Tags
         id: check_release
         env:
