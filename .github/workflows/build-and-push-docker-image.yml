@@ -49,8 +49,8 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          cache-from: type=registry,ref=$docker_user/$docker_repo:cache
-          cache-to: type=registry,ref=$docker_user/$docker_repo:cache,mode=max
+          cache-from: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/$DOCKER_REPO:cache
+          cache-to: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/$DOCKER_REPO:cache,mode=max
           tags: ${{ env.IMAGE_TAGS }}
           platforms: linux/amd64,linux/arm64,linux/arm/v7
           push: true
