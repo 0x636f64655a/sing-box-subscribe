@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       docker_user: ${{ secrets.DOCKERHUB_USERNAME }}
-      docker_pass: ${{ secrets.DOCKERHUB_TOKEN }}
+      docker_pat: ${{ secrets.DOCKERHUB_PAT }}
       docker_repo: ${{ github.repository }}
       release_version: ${{ github.event.release.tag_name }}
     steps:
@@ -18,7 +18,7 @@ jobs:
         uses: docker/login-action@v3
         with:
           username: $docker_user
-          password: $docker_pass
+          password: $docker_pat
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
