@@ -33,7 +33,7 @@ jobs:
           REPO_NAME=$(basename ${{ github.repository }})
           echo "DOCKER_REPO=${REPO_NAME}" >> $GITHUB_ENV
 
-      - name: Check for Existing Releases & Set Tags
+      - name: Check for Existing Releases & Define Tags
         id: check_release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -42,10 +42,10 @@ jobs:
 
           if [[ -z "$LATEST_RELEASE" ]]; then
             echo "No releases found. Using 'latest' as the only tag."
-            echo "IMAGE_TAGS=${{ github.repository }}:latest" >> $GITHUB_ENV
+            echo "IMAGE_TAGS=${{ secrets.DOCKERHUB_USERNAME }}/${{ env.DOCKER_REPO }}:latest,ghcr.io/${{ github.repository }}:latest" >> $GITHUB_ENV
           else
             echo "Latest release found: $LATEST_RELEASE"
-            echo "IMAGE_TAGS=${{ secrets.DOCKERHUB_USERNAME }}/${{ env.DOCKER_REPO }}:$LATEST_RELEASE,${{ secrets.DOCKERHUB_USERNAME }}/${{ env.DOCKER_REPO }}:latest" >> $GITHUB_ENV
+            echo "IMAGE_TAGS=${{ secrets.DOCKERHUB_USERNAME }}/${{ env.DOCKER_REPO }}:$LATEST_RELEASE,${{ secrets.DOCKERHUB_USERNAME }}/${{ env.DOCKER_REPO }}:latest,ghcr.io/${{ github.repository }}:$LATEST_RELEASE,ghcr.io/${{ github.repository }}:latest" >> $GITHUB_ENV
           fi
 
       - name: Build And Push
