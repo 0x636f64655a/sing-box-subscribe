@@ -28,6 +28,11 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      - name: Set Docker Repository Name (Only Repo Name)
+        run: |
+          REPO_NAME=$(basename ${{ github.repository }})
+          echo "DOCKER_REPO=${REPO_NAME}" >> $GITHUB_ENV
+
       - name: Check for Existing Releases & Set Tags
         id: check_release
         env:
@@ -40,7 +45,7 @@ jobs:
             echo "IMAGE_TAGS=${{ github.repository }}:latest" >> $GITHUB_ENV
           else
             echo "Latest release found: $LATEST_RELEASE"
-            echo "IMAGE_TAGS=${{ github.repository }}:$LATEST_RELEASE,${{ github.repository }}:latest" >> $GITHUB_ENV
+            echo "IMAGE_TAGS=${{ secrets.DOCKERHUB_USERNAME }}/$DOCKER_REPO:$LATEST_RELEASE,${{ secrets.DOCKERHUB_USERNAME }}/$DOCKER_REPO:latest" >> $GITHUB_ENV
           fi
 
       - name: Build And Push
