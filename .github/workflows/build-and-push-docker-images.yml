@@ -30,41 +30,6 @@ jobs:
           echo "REPO_NAME=$(basename $GITHUB_REPOSITORY)" >> $GITHUB_ENV
           echo "GH_REPO_URL=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" >> $GITHUB_ENV
 
-      - name: Validate & Set Image Labels
-        id: validate_and_set_labels
-        run: |
-          LABEL_SOURCE=$(docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.source" }}' . || echo "")
-          LABEL_DESC=$(docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.description" }}' . || echo "")
-          
-          if [[ -z "$LABEL_SOURCE" ]]; then
-            echo "LABELS+=--label org.opencontainers.image.source=$IMAGE_SOURCE_URL" >> $GITHUB_ENV
-          fi
-          
-          if [[ -z "$LABEL_DESC" ]]; then
-            echo "LABELS+=--label org.opencontainers.image.description='A Docker image automatically built from the repo $GH_FULL_REPO_NAME ($GH_REPO_URL)' using Github Actions." >> $GITHUB_ENV
-          fi
-
-      - name: Check for Existing Releases & Set Image Tags
-        id: check_release
-        run: |
-          LATEST_RELEASE=$(gh release list --limit 1 --json tagName --jq '.[0].tagName')
-
-          if [[ -z "$LATEST_RELEASE" ]]; then
-            echo "No releases found. Using 'latest' as the only tag."
-            echo "IMAGE_TAGS= \
-            ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.REPO_NAME }}:latest, \
-            ghcr.io/$GH_FULL_REPO_NAME:latest" \
-            >> $GITHUB_ENV
-          else
-            echo "Latest release found: $LATEST_RELEASE"
-            echo "IMAGE_TAGS= \
-            ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.REPO_NAME }}:$LATEST_RELEASE, \
-            ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.REPO_NAME }}:latest, \
-            ghcr.io/$GH_FULL_REPO_NAME:$LATEST_RELEASE, \
-            ghcr.io/$GH_FULL_REPO_NAME:latest" \
-            >> $GITHUB_ENV
-          fi
-
       - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
@@ -84,6 +49,27 @@ jobs:
       - name: Set Up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Check for Existing Releases & Set Image Tags
+        id: check_release
+        run: |
+          LATEST_RELEASE=$(gh release list --limit 1 --json tagName --jq '.[0].tagName') >> $GITHUB_ENV
+
+          if [[ -z "$LATEST_RELEASE" ]]; then
+            echo "No releases found. Using 'latest' as the only tag."
+            echo "IMAGE_TAGS= \
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.REPO_NAME }}:latest, \
+            ghcr.io/$GH_FULL_REPO_NAME:latest" \
+            >> $GITHUB_ENV
+          else
+            echo "Latest release found: $LATEST_RELEASE"
+            echo "IMAGE_TAGS= \
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.REPO_NAME }}:$LATEST_RELEASE, \
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.REPO_NAME }}:latest, \
+            ghcr.io/$GH_FULL_REPO_NAME:$LATEST_RELEASE, \
+            ghcr.io/$GH_FULL_REPO_NAME:latest" \
+            >> $GITHUB_ENV
+          fi
+
       - name: Build & Push
         uses: docker/build-push-action@v6
         with:
@@ -92,11 +78,16 @@ jobs:
           cache-to: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/${{ env.REPO_NAME }}:cache,mode=max
           tags: ${{ env.IMAGE_TAGS }}
           platforms: ${{ matrix.platforms }}
+          labels: |
+            maintainer="codeZ"
+            version="${{ env.LATEST_RELEASE }}"
+            source="$GH_REPO_URL"
+            description="A Docker image automatically built from the repo $GH_FULL_REPO_NAME."
           push: true
 
       - name: Validate & Set GHCR Linking
         id: validate_and_set_ghcr_linking
-        run: |       
+        run: |
           LINKED_REPO=$(gh api /user/packages/container/$REPO_NAME/repositories --jq '.repositories[] | select(.full_name == "$GH_FULL_REPO_NAME")')
           GH_REPOSITORY_id=${{ github.repository_id }}
           if [[ -z "$LINKED_REPO" ]]; then
@@ -115,7 +106,7 @@ jobs:
 
       - name: Check & Set GHCR Image Visibility
         id: check_and_set_visibility
-        run: |         
+        run: |
           # Fetch current visibility
           CURRENT_VISIBILITY=$(gh api \
             -H "Accept: application/vnd.github.v3+json" \
@@ -141,4 +132,3 @@ jobs:
           else
             echo "Visibility is already public. No changes needed."
           fi
-
