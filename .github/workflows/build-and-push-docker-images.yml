@@ -87,8 +87,10 @@ jobs:
 
       - name: Validate & Set GHCR Linking
         id: validate_and_set_ghcr_linking
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          LINKED_REPO=$(gh api /user/packages/container/$REPO_NAME/repositories --jq '.repositories[] | select(.full_name == "$GH_FULL_REPO_NAME")')
+          LINKED_REPO=$(gh api /user/packages/container/$REPO_NAME/repositories --jq ".repositories[] | select(.full_name == \"$GH_FULL_REPO_NAME\")")
           GH_REPOSITORY_id=${{ github.repository_id }}
           if [[ -z "$LINKED_REPO" ]]; then
             echo "Linking repository to GHCR package..."
