@@ -15,6 +15,7 @@ jobs:
   docker_build_and_push:
     runs-on: ubuntu-latest
     env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     strategy:
       matrix:
@@ -26,8 +27,8 @@ jobs:
       - name: Set up environment variables
         run: |
           echo "GH_FULL_REPO_NAME=$GITHUB_REPOSITORY" >> $GITHUB_ENV
-          echo "GH_REPO_URL=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" >> $GITHUB_ENV
           echo "REPO_NAME=$(basename $GITHUB_REPOSITORY)" >> $GITHUB_ENV
+          echo "GH_REPO_URL=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" >> $GITHUB_ENV
 
       - name: Validate & Set Image Labels
         id: validate_and_set_labels
@@ -40,14 +41,11 @@ jobs:
           fi
           
           if [[ -z "$LABEL_DESC" ]]; then
-            echo "LABELS+=--label org.opencontainers.image.description='A Docker image built from the repo $GH_FULL_REPO_NAME ($GH_REPO_URL)'" >> $GITHUB_ENV
-
+            echo "LABELS+=--label org.opencontainers.image.description='A Docker image automatically built from the repo $GH_FULL_REPO_NAME ($GH_REPO_URL)' using Github Actions." >> $GITHUB_ENV
           fi
 
       - name: Check for Existing Releases & Set Image Tags
         id: check_release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           LATEST_RELEASE=$(gh release list --limit 1 --json tagName --jq '.[0].tagName')
 
@@ -96,24 +94,24 @@ jobs:
           platforms: ${{ matrix.platforms }}
           push: true
 
-      - name: Validate GHCR Image Linking
-        id: validate_image_linking
+      - name: Validate & Set GHCR Linking
+        id: validate_and_set_ghcr_linking
         run: |       
           LINKED_REPO=$(gh api /user/packages/container/$REPO_NAME/repositories --jq '.repositories[] | select(.full_name == "$GH_FULL_REPO_NAME")')
+          GH_REPOSITORY_id=${{ github.repository_id }}
           if [[ -z "$LINKED_REPO" ]]; then
             echo "Linking repository to GHCR package..."
             
             gh api --method PUT \
               -H "Accept: application/vnd.github.v3+json" \
               /user/packages/container/$REPO_NAME/repositories \
-              -f repository_id=${{ github.repository_id }} || {
+              -f repository_id=$GH_REPOSITORY_id || {
                 echo "Failed to link repository to GHCR package!"
                 exit 1
               }
           
             echo "Repository successfully linked to GHCR package."
           fi
-
 
       - name: Check & Set GHCR Image Visibility
         id: check_and_set_visibility
