@@ -101,11 +101,19 @@ jobs:
         run: |       
           LINKED_REPO=$(gh api /user/packages/container/$REPO_NAME/repositories --jq '.repositories[] | select(.full_name == "$GH_FULL_REPO_NAME")')
           if [[ -z "$LINKED_REPO" ]]; then
+            echo "Linking repository to GHCR package..."
+            
             gh api --method PUT \
               -H "Accept: application/vnd.github.v3+json" \
               /user/packages/container/$REPO_NAME/repositories \
-              -f repository_id=${{ github.repository_id }}
+              -f repository_id=${{ github.repository_id }} || {
+                echo "Failed to link repository to GHCR package!"
+                exit 1
+              }
+          
+            echo "Repository successfully linked to GHCR package."
           fi
+
 
       - name: Check & Set GHCR Image Visibility
         id: check_and_set_visibility
