@@ -26,7 +26,7 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GHCR_PAT }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -66,3 +66,14 @@ jobs:
           tags: ${{ env.IMAGE_TAGS }}
           platforms: linux/amd64,linux/arm64
           push: true
+
+      - name: Make GHCR image public
+        run: |
+          IMAGE_NAME=${{ env.DOCKER_REPO }}
+          gh api \
+            --method PATCH \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "/user/packages/container/$IMAGE_NAME/visibility" \
+            -f visibility="public"
+
