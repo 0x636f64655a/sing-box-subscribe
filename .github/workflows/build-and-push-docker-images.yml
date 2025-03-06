@@ -98,7 +98,7 @@ jobs:
           fi
       
           echo "Checking if repository is already linked..."
-          LINKED_REPO=$(gh api /user/packages/container/$REPO_NAME/repositories --jq --arg repo "$GH_FULL_REPO_NAME" '.repositories[] | select(.full_name == $repo)'))
+          LINKED_REPO=$(gh api /user/packages/container/$REPO_NAME/repositories --jq --arg repo "$GH_FULL_REPO_NAME" '.repositories[] | select(.full_name == $repo)')
       
           if [[ -z "$LINKED_REPO" ]]; then
             echo "Linking repository to GHCR package..."
