@@ -15,4 +15,4 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
-          gh api "/user/packages/container/sing-box-subscribe"
+          docker manifest inspect ubuntu:latest | jq '.manifests[].platform'
