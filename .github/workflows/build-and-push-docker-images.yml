@@ -90,7 +90,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          LINKED_REPO=$(gh api /user/packages/container/$REPO_NAME/repositories --jq ".repositories[] | select(.full_name == \"$GH_FULL_REPO_NAME\")")
+          LINKED_REPO=$(gh api /user/packages/container/$REPO_NAME/repositories --jq --arg repo "$GH_FULL_REPO_NAME" '.repositories[] | select(.full_name == $repo)')
           GH_REPOSITORY_id=${{ github.repository_id }}
           if [[ -z "$LINKED_REPO" ]]; then
             echo "Linking repository to GHCR package..."
