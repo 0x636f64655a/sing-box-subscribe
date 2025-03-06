@@ -79,10 +79,11 @@ jobs:
           tags: ${{ env.IMAGE_TAGS }}
           platforms: ${{ matrix.platforms }}
           labels: |
-            maintainer="codeZ"
-            version="${{ env.LATEST_RELEASE }}"
-            source="$GH_REPO_URL"
-            description="A Docker image automatically built from the repo $GH_FULL_REPO_NAME."
+            org.opencontainers.image.title="${{ env.REPO_NAME }}"
+            org.opencontainers.image.maintainer="codeZ"
+            org.opencontainers.image.version="${{ env.LATEST_RELEASE }}"
+            org.opencontainers.image.source="$GH_REPO_URL"
+            org.opencontainers.image.description="A Docker image automatically built from the repo $GH_FULL_REPO_NAME."
           push: true
 
       - name: Check & Set GHCR Image Visibility
