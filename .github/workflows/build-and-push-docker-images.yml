@@ -14,7 +14,59 @@ on:
 jobs:
   docker_build_and_push:
     runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    strategy:
+      matrix:
+        platforms: [linux/amd64, linux/arm64]
     steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up environment variables
+        run: |
+          echo "GH_FULL_REPO_NAME=$GITHUB_REPOSITORY" >> $GITHUB_ENV
+          echo "GH_REPO_URL=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" >> $GITHUB_ENV
+          echo "REPO_NAME=$(basename $GITHUB_REPOSITORY)" >> $GITHUB_ENV
+
+      - name: Validate & Set Image Labels
+        id: validate_and_set_labels
+        run: |
+          LABEL_SOURCE=$(docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.source" }}' . || echo "")
+          LABEL_DESC=$(docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.description" }}' . || echo "")
+          
+          if [[ -z "$LABEL_SOURCE" ]]; then
+            echo "LABELS+=--label org.opencontainers.image.source=$IMAGE_SOURCE_URL" >> $GITHUB_ENV
+          fi
+          
+          if [[ -z "$LABEL_DESC" ]]; then
+            echo "LABELS+=--label org.opencontainers.image.description='A Docker image built from the repo $GH_FULL_REPO_NAME ($GH_REPO_URL)'" >> $GITHUB_ENV
+
+          fi
+
+      - name: Check for Existing Releases & Set Image Tags
+        id: check_release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          LATEST_RELEASE=$(gh release list --limit 1 --json tagName --jq '.[0].tagName')
+
+          if [[ -z "$LATEST_RELEASE" ]]; then
+            echo "No releases found. Using 'latest' as the only tag."
+            echo "IMAGE_TAGS= \
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.REPO_NAME }}:latest, \
+            ghcr.io/$GH_FULL_REPO_NAME:latest" \
+            >> $GITHUB_ENV
+          else
+            echo "Latest release found: $LATEST_RELEASE"
+            echo "IMAGE_TAGS= \
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.REPO_NAME }}:$LATEST_RELEASE, \
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.REPO_NAME }}:latest, \
+            ghcr.io/$GH_FULL_REPO_NAME:$LATEST_RELEASE, \
+            ghcr.io/$GH_FULL_REPO_NAME:latest" \
+            >> $GITHUB_ENV
+          fi
+
       - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
@@ -34,46 +86,53 @@ jobs:
       - name: Set Up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Set Docker Repository Name (Only Repo Name)
-        run: |
-          REPO_NAME=$(basename ${{ github.repository }})
-          echo "DOCKER_REPO=${REPO_NAME}" >> $GITHUB_ENV
-
-      - name: Check for Existing Releases & Define Tags
-        id: check_release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          LATEST_RELEASE=$(gh release list --limit 1 --json tagName --jq '.[0].tagName')
-
-          if [[ -z "$LATEST_RELEASE" ]]; then
-            echo "No releases found. Using 'latest' as the only tag."
-            echo "IMAGE_TAGS=${{ secrets.DOCKERHUB_USERNAME }}/${{ env.DOCKER_REPO }}:latest,ghcr.io/${{ github.repository }}:latest" >> $GITHUB_ENV
-          else
-            echo "Latest release found: $LATEST_RELEASE"
-            echo "IMAGE_TAGS=${{ secrets.DOCKERHUB_USERNAME }}/${{ env.DOCKER_REPO }}:$LATEST_RELEASE,${{ secrets.DOCKERHUB_USERNAME }}/${{ env.DOCKER_REPO }}:latest,ghcr.io/${{ github.repository }}:$LATEST_RELEASE,ghcr.io/${{ github.repository }}:latest" >> $GITHUB_ENV
-          fi
-
-      - name: Build And Push
+      - name: Build & Push
         uses: docker/build-push-action@v6
         with:
           context: .
-          cache-from: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/${{ env.DOCKER_REPO }}:cache
-          cache-to: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/${{ env.DOCKER_REPO }}:cache,mode=max
+          cache-from: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/${{ env.REPO_NAME }}:cache
+          cache-to: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/${{ env.REPO_NAME }}:cache,mode=max
           tags: ${{ env.IMAGE_TAGS }}
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ matrix.platforms }}
           push: true
 
-      - name: Make GHCR image public
-        run: |
-          IMAGE_NAME=${{ env.DOCKER_REPO }}
-          gh api \
-            --method PATCH \
-            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+      - name: Validate GHCR Image Linking
+        id: validate_image_linking
+        run: |       
+          LINKED_REPO=$(gh api /user/packages/container/$REPO_NAME/repositories --jq '.repositories[] | select(.full_name == "$GH_FULL_REPO_NAME")')
+          if [[ -z "$LINKED_REPO" ]]; then
+            gh api --method PUT \
+              -H "Accept: application/vnd.github.v3+json" \
+              /user/packages/container/$REPO_NAME/repositories \
+              -f repository_id=${{ github.repository_id }}
+          fi
+
+      - name: Check & Set GHCR Image Visibility
+        id: check_and_set_visibility
+        run: |         
+          # Fetch current visibility
+          CURRENT_VISIBILITY=$(gh api \
             -H "Accept: application/vnd.github.v3+json" \
-            "/user/packages/container/$IMAGE_NAME/visibility" \
-            -f visibility="public"
+            "/user/packages/container/$REPO_NAME" \
+            --jq '.visibility // empty')
+          
+          if [[ -z "$CURRENT_VISIBILITY" ]]; then
+            echo "Failed to fetch visibility. Check your repository permissions."
+            exit 1
+          fi
+      
+          echo "Current visibility: $CURRENT_VISIBILITY"
+      
+          # Change visibility only if it's not already public
+          if [[ "$CURRENT_VISIBILITY" != "public" ]]; then
+            echo "Updating visibility to public..."
+            gh api \
+              --method PATCH \
+              -H "Accept: application/vnd.github.v3+json" \
+              "/user/packages/container/$REPO_NAME/visibility" \
+              -f visibility="public"
+            echo "Visibility updated to public."
+          else
+            echo "Visibility is already public. No changes needed."
+          fi
 
