@@ -88,32 +88,20 @@ jobs:
       - name: Validate & Set GHCR Linking
         id: validate_and_set_ghcr_linking
         run: |
-          echo "Checking authentication..."
-          gh auth status || { echo "GitHub CLI authentication failed!"; exit 1; }
-      
-          echo "Checking if package exists..."
-          if ! gh api /user/packages/container/$REPO_NAME &>/dev/null; then
-            echo "Package $REPO_NAME not found in GHCR. Ensure it exists before linking."
-            exit 1
-          fi
-      
-          echo "Checking if repository is already linked..."
-          LINKED_REPO=$(gh api /user/packages/container/$REPO_NAME/repositories --jq --arg repo "$GH_FULL_REPO_NAME" '.repositories[] | select(.full_name == $repo)')
-      
+          LINKED_REPO=$(gh api /user/packages/container/$REPO_NAME/repositories | jq --arg repo "$GH_FULL_REPO_NAME" '.repositories[] | select(.full_name == $repo)')
+          GH_REPOSITORY_id=${{ github.repository_id }}
           if [[ -z "$LINKED_REPO" ]]; then
             echo "Linking repository to GHCR package..."
             
             gh api --method PUT \
               -H "Accept: application/vnd.github.v3+json" \
               /user/packages/container/$REPO_NAME/repositories \
-              -f repository_id=${{ github.repository_id }} || {
+              -f repository_id=$GH_REPOSITORY_id || {
                 echo "Failed to link repository to GHCR package!"
                 exit 1
               }
-      
+          
             echo "Repository successfully linked to GHCR package."
-          else
-            echo "Repository is already linked."
           fi
 
       - name: Check & Set GHCR Image Visibility
