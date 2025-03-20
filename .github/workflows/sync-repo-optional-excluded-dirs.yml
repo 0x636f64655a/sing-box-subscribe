@@ -112,7 +112,7 @@ jobs:
         run: |
           #git fetch --tags
           #prev_tags=$(git tag -l | semver sort | jq -R -s -c 'split("\n") | map(select(length > 0))')
-          prev_tags=$(git tag -l)
+          prev_tags=$(git tag -l | jq -R -s -c 'split("\n") | map(select(length > 0))')
           echo "PREV_TAGS=$prev_tags" >> "$GITHUB_ENV"
 
       - name: Sanitize EXCLUDE_DIRS input
@@ -150,7 +150,7 @@ jobs:
         run: |
           #git fetch --tags
           #latest_tags=$(git tag -l | semver sort | jq -R -s -c 'split("\n") | map(select(length > 0))')
-          latest_tags=$(git tag -l)
+          latest_tags=$(git tag -l | jq -R -s -c 'split("\n") | map(select(length > 0))')
           echo "LATEST_TAGS=$latest_tags" >> "$GITHUB_ENV"
 
       - name: Compare tags and output values
