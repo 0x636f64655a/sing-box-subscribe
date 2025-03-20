@@ -1,0 +1,177 @@
+name: Sync Fork Branches and Tags to Upstream
+on:
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+  workflow_call:
+    outputs:
+      NEW_TAGS:
+        description: "New tags that were detected in this sync."
+        value: ${{ jobs.sync_fork.outputs.NEW_TAGS }}
+      DEL_TAGS:
+        description: "Tags that were deleted in this sync."
+        value: ${{ jobs.sync_fork.outputs.DEL_TAGS }}
+
+jobs:
+  retrieve_upstream_info:
+    name: Retrieve upstream info
+    runs-on: ubuntu-latest
+    outputs:
+      UPSTREAM_OWNER: ${{ steps.get-info.outputs.UPSTREAM_OWNER }}
+      UPSTREAM_REPO: ${{ steps.get-info.outputs.UPSTREAM_REPO }}
+      UPSTREAM_FULL_NAME: ${{ steps.get-info.outputs.UPSTREAM_FULL_NAME }}
+      UPSTREAM_DEFAULT_BRANCH: ${{ steps.get-info.outputs.UPSTREAM_DEFAULT_BRANCH }}
+      BRANCHES_JSON: ${{ steps.set-matrix.outputs.BRANCHES_JSON }}
+    steps:
+      - name: Get upstream repository info via API
+        id: get-info
+        run: |
+          response=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" "https://api.github.com/repos/${{ github.repository }}")
+          echo "Fetching repository information via Github API..."
+
+          if [ -z "$response" ]; then
+            echo "Failed to retrieve repository information."
+            exit 1
+          fi
+
+          if ! echo "$response" | jq -e '.parent' >/dev/null; then
+            echo "This repository is not a fork."
+            exit 1
+          fi
+
+          upstream_owner=$(echo "$response" | jq -r '.parent.owner.login')
+          upstream_repo=$(echo "$response" | jq -r '.parent.name')
+          upstream_full_name=$(echo "$response" | jq -r '.parent.full_name')
+          upstream_repo_url=$(echo "$response" | jq -r '.parent.html_url')
+          upstream_default_branch=$(echo "$response" | jq -r '.parent.default_branch')
+
+          echo "UPSTREAM_OWNER=$upstream_owner" | tee -a "$GITHUB_OUTPUT"
+          echo "UPSTREAM_REPO=$upstream_repo" | tee -a "$GITHUB_OUTPUT"
+          echo "UPSTREAM_FULL_NAME=$upstream_full_name" | tee -a "$GITHUB_OUTPUT"
+          echo "UPSTREAM_REPO_URL=$upstream_repo_url" | tee -a "$GITHUB_ENV"
+          echo "UPSTREAM_DEFAULT_BRANCH=$upstream_default_branch" | tee -a "$GITHUB_OUTPUT"
+
+      - name: Set matrix of branches
+        id: set-matrix
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          branches=$(git ls-remote --heads "$UPSTREAM_REPO_URL" | awk '{print $2}' | sed -E 's|refs/heads/||g' | tr -d '[:cntrl:]')
+          echo "Fetching branches from $upstream_repo..."
+
+          if [[ -z "$branches" ]]; then
+            echo "No branches found! Exiting..."
+            exit 1
+          fi
+
+          if ! branches_json=$(echo "$branches" | jq -Rcs 'split("\n") | map(select(length > 0))'); then
+            echo "Error: Failed to generate valid JSON!"
+            exit 1
+          fi
+
+          echo "Generated JSON: $branches_json"
+          echo "BRANCHES_JSON=$branches_json" >> "$GITHUB_OUTPUT"
+
+  sync_fork:
+    runs-on: ubuntu-latest
+    needs: retrieve_upstream_info
+    env:
+      DEFAULT_BRANCH: ${{ needs.retrieve_upstream_info.outputs.UPSTREAM_DEFAULT_BRANCH }}
+    strategy:
+      matrix:
+        branches: ${{fromJson(needs.retrieve_upstream_info.outputs.BRANCHES_JSON)}}
+      fail-fast: false
+    outputs:
+      NEW_TAGS: ${{ steps.check-tags.outputs.NEW_TAGS }}
+      DEL_TAGS: ${{ steps.check-tags.outputs.DEL_TAGS }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.branches }}
+          fetch-depth: 0
+
+      - name: Install semver
+        run: |
+          if ! command -v semver &> /dev/null; then
+            echo "Semver not found. Installing..."
+            npm install -g semver --silent
+          else
+            echo "Semver is already installed."
+          fi
+
+      - name: Fetch initial tags
+        id: fetch-prev-tags
+        run: |
+          prev_tags=$(git tag -l | semver sort | jq -R -s -c 'split("\n") | map(select(length > 0))')
+          echo "PREV_TAGS=$prev_tags" | tee -a "$GITHUB_ENV"
+
+      - name: Sync fork branches and tags
+        run: |
+          if ! git remote get-url upstream &> /dev/null; then
+            git remote add upstream https://github.com/${{ needs.retrieve_upstream_info.outputs.UPSTREAM_FULL_NAME }}.git
+          fi
+
+          git sparse-checkout init --cone
+          git sparse-checkout set --skip-worktree .github/workflows
+          git fetch upstream
+
+          git checkout ${{ matrix.branches }}
+          git pull --rebase upstream ${{ matrix.branches }}
+          git push origin ${{ matrix.branches }}
+
+          git fetch upstream --tags
+          if [ $(git tag -l | wc -l) -gt 0 ]; then
+            git push origin --tags
+          else
+            echo "No new tags to push."
+          fi
+
+      - name: Fetch latest tags
+        id: fetch-latest-tags
+        run: |
+          latest_tags=$(git tag -l | semver sort | jq -R -s -c 'split("\n") | map(select(length > 0))')
+          echo "LATEST_TAGS=$latest_tags" | tee -a "$GITHUB_ENV"
+
+      - name: Compare tags and output values
+        id: check-tags
+        run: |
+          if ! echo "$LATEST_TAGS" | jq empty || ! echo "$PREV_TAGS" | jq empty; then
+            echo "Error: Invalid JSON data."
+            exit 1
+          fi
+  
+          if [ -z "$LATEST_TAGS" ] && [ -z "$PREV_TAGS" ]; then
+            echo "Tags not exist."
+            echo "NEW_TAGS=''" | tee -a "$GITHUB_OUTPUT"
+            echo "DEL_TAGS=''" | tee -a "$GITHUB_OUTPUT"
+          elif [ -z "$LATEST_TAGS" ] && [ -n "$PREV_TAGS" ]; then
+            echo "All tags were eliminated."
+            echo "NEW_TAGS=''" | tee -a "$GITHUB_OUTPUT"
+            echo "DEL_TAGS=$PREV_TAGS" | tee -a "$GITHUB_OUTPUT"
+          elif [ -n "$LATEST_TAGS" ] && [ -z "$PREV_TAGS" ]; then
+            echo "New tags detected: $LATEST_TAGS"
+            echo "NEW_TAGS=$LATEST_TAGS" | tee -a "$GITHUB_OUTPUT"
+            echo "DEL_TAGS=''" | tee -a "$GITHUB_OUTPUT"
+          else
+            added_tags=$(jq -n --argjson a "$LATEST_TAGS" --argjson b "$PREV_TAGS" '$a - $b' | if length == 0 then [] else . end')
+            removed_tags=$(jq -n --argjson a "$PREV_TAGS" --argjson b "$LATEST_TAGS" '$a - $b' | if length == 0 then [] else . end')
+
+            if [ "$added_tags" = "[]" ] && [ "$removed_tags" = "[]" ]; then
+              echo "New tags not found in this sync."
+              echo "NEW_TAGS=''" | tee -a "$GITHUB_OUTPUT"
+              echo "DEL_TAGS=''" | tee -a "$GITHUB_OUTPUT"
+            elif [ "$removed_tags" = "[]" ]; then
+              echo "New tags detected: $added_tags"
+              echo "NEW_TAGS=$added_tags" | tee -a "$GITHUB_OUTPUT"
+              echo "DEL_TAGS=''" | tee -a "$GITHUB_OUTPUT"
+            elif [ "$added_tags" = "[]" ]; then
+              echo "Old tags removed: $removed_tags"
+              echo "NEW_TAGS=''" | tee -a "$GITHUB_OUTPUT"
+              echo "DEL_TAGS=$removed_tags" | tee -a "$GITHUB_OUTPUT"
+            else
+              echo "Old tags removed: $removed_tags. New tags detected: $added_tags"
+              echo "NEW_TAGS=$added_tags" | tee -a "$GITHUB_OUTPUT"
+              echo "DEL_TAGS=$removed_tags" | tee -a "$GITHUB_OUTPUT"
+            fi
+          fi
