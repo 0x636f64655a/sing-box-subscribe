@@ -110,8 +110,9 @@ jobs:
       - name: Fetch initial tags
         id: fetch-prev-tags
         run: |
-          git fetch --tags
-          prev_tags=$(git tag -l | semver sort | jq -R -s -c 'split("\n") | map(select(length > 0))')
+          #git fetch --tags
+          #prev_tags=$(git tag -l | semver sort | jq -R -s -c 'split("\n") | map(select(length > 0))')
+          prev_tags=$(git tag -l)
           echo "PREV_TAGS=$prev_tags" >> "$GITHUB_ENV"
 
       - name: Sanitize EXCLUDE_DIRS input
@@ -147,8 +148,9 @@ jobs:
       - name: Fetch latest tags
         id: fetch-latest-tags
         run: |
-          git fetch --tags
-          latest_tags=$(git tag -l | semver sort | jq -R -s -c 'split("\n") | map(select(length > 0))')
+          #git fetch --tags
+          #latest_tags=$(git tag -l | semver sort | jq -R -s -c 'split("\n") | map(select(length > 0))')
+          latest_tags=$(git tag -l)
           echo "LATEST_TAGS=$latest_tags" >> "$GITHUB_ENV"
 
       - name: Compare tags and output values
