@@ -3,6 +3,11 @@ on:
   schedule:
     - cron: '0 0 * * *'
   workflow_dispatch:
+    inputs:
+      EXCL_DIR:
+        description: 'Comma-separated directories to exclude during sync (default: .github/workflows)'
+        required: false
+        default: '.github/workflows'
   workflow_call:
     outputs:
       NEW_TAGS:
@@ -73,10 +78,12 @@ jobs:
           echo "BRANCHES_JSON=$branches_json" >> "$GITHUB_OUTPUT"
 
   sync_fork:
+    Name: Sync forked repo
     runs-on: ubuntu-latest
     needs: retrieve_upstream_info
     env:
       DEFAULT_BRANCH: ${{ needs.retrieve_upstream_info.outputs.UPSTREAM_DEFAULT_BRANCH }}
+      EXCL_DIRS: ${{ github.event.inputs.EXCL_DIRS || '.github/workflows' }}
     strategy:
       matrix:
         branches: ${{fromJson(needs.retrieve_upstream_info.outputs.BRANCHES_JSON)}}
@@ -106,19 +113,24 @@ jobs:
           prev_tags=$(git tag -l | semver sort | jq -R -s -c 'split("\n") | map(select(length > 0))')
           echo "PREV_TAGS=$prev_tags" | tee -a "$GITHUB_ENV"
 
+      - name: Sanitize EXCL_DIRS input
+        id: sanitize-excl-dirs
+        run: |
+          CLEANED_EXCL_DIRS=$(echo "${{ env.EXCL_DIRS }}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')  # Trim leading/trailing spaces
+          CLEANED_EXCL_DIRS=$(echo "$CLEANED_EXCL_DIRS" | sed 's/[[:space:]]*,[[:space:]]*/,/g')  # Remove spaces after commas
+          echo "Cleaned EXCL_DIRS: $CLEANED_EXCL_DIRS"
+          echo "EXCL_DIRS=$CLEANED_EXCL_DIRS" >> $GITHUB_ENV
+
       - name: Sync fork branches and tags
         run: |
           if ! git remote get-url upstream &> /dev/null; then
             git remote add upstream https://github.com/${{ needs.retrieve_upstream_info.outputs.UPSTREAM_FULL_NAME }}.git
           fi
 
-          git sparse-checkout init --cone
-          git sparse-checkout set .
-          git update-index --skip-worktree .github/workflows/*
           git fetch upstream
-
           git checkout ${{ matrix.branches }}
-          git pull --rebase upstream ${{ matrix.branches }}
+          EXCLUDE_PATTERN=$(echo ${{ env.EXCL_DIRS }} | sed 's/,/ :(exclude)/g')
+          git pull --rebase upstream ${{ matrix.branches }} -- . ':(exclude)$EXCLUDE_PATTERN'
           git push origin ${{ matrix.branches }}
 
           git fetch upstream --tags
