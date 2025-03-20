@@ -113,7 +113,8 @@ jobs:
           fi
 
           git sparse-checkout init --cone
-          git sparse-checkout set --skip-worktree .github/workflows
+          git sparse-checkout set .
+          git update-index --skip-worktree .github/workflows/*
           git fetch upstream
 
           git checkout ${{ matrix.branches }}
