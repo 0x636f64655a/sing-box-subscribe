@@ -127,10 +127,13 @@ jobs:
             git remote add upstream https://github.com/${{ needs.retrieve_upstream_info.outputs.UPSTREAM_FULL_NAME }}.git
           fi
 
+          git sparse-checkout init --cone
+          EXCLUDE_PATTERN=$(echo "$EXCLUDE_DIRS" | sed 's/,/ !/g')
+          echo "!$EXCLUDE_PATTERN" | git sparse-checkout set
           git fetch upstream
+
           git checkout ${{ matrix.branches }}
-          EXCLUDE_PATTERN=$(echo "$CLEANED_EXCLUDE_DIRS" | sed 's/,/ :(exclude)/g')
-          git pull --rebase upstream ${{ matrix.branches }} -- ':(exclude)$EXCLUDE_PATTERN'
+          git pull --rebase upstream ${{ matrix.branches }}
           git push origin ${{ matrix.branches }}
 
           git fetch upstream --tags
