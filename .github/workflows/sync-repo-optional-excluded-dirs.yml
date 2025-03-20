@@ -50,11 +50,11 @@ jobs:
           upstream_repo_url=$(echo "$response" | jq -r '.parent.html_url')
           upstream_default_branch=$(echo "$response" | jq -r '.parent.default_branch')
 
-          echo "UPSTREAM_OWNER=$upstream_owner" | tee -a "$GITHUB_OUTPUT"
-          echo "UPSTREAM_REPO=$upstream_repo" | tee -a "$GITHUB_OUTPUT"
-          echo "UPSTREAM_FULL_NAME=$upstream_full_name" | tee -a "$GITHUB_OUTPUT"
-          echo "UPSTREAM_REPO_URL=$upstream_repo_url" | tee -a "$GITHUB_ENV"
-          echo "UPSTREAM_DEFAULT_BRANCH=$upstream_default_branch" | tee -a "$GITHUB_OUTPUT"
+          echo "UPSTREAM_OWNER=$upstream_owner" >> "$GITHUB_OUTPUT"
+          echo "UPSTREAM_REPO=$upstream_repo" >> "$GITHUB_OUTPUT"
+          echo "UPSTREAM_FULL_NAME=$upstream_full_name" >> "$GITHUB_OUTPUT"
+          echo "UPSTREAM_REPO_URL=$upstream_repo_url" >> "$GITHUB_ENV"
+          echo "UPSTREAM_DEFAULT_BRANCH=$upstream_default_branch" >> "$GITHUB_OUTPUT"
 
       - name: Set matrix of branches
         id: set-matrix
@@ -110,8 +110,9 @@ jobs:
       - name: Fetch initial tags
         id: fetch-prev-tags
         run: |
+          git fetch --tags
           prev_tags=$(git tag -l | semver sort | jq -R -s -c 'split("\n") | map(select(length > 0))')
-          echo "PREV_TAGS=$prev_tags" | tee -a "$GITHUB_ENV"
+          echo "PREV_TAGS=$prev_tags" >> "$GITHUB_ENV"
 
       - name: Sanitize EXCLUDE_DIRS input
         id: sanitize-input
@@ -146,8 +147,9 @@ jobs:
       - name: Fetch latest tags
         id: fetch-latest-tags
         run: |
+          git fetch --tags
           latest_tags=$(git tag -l | semver sort | jq -R -s -c 'split("\n") | map(select(length > 0))')
-          echo "LATEST_TAGS=$latest_tags" | tee -a "$GITHUB_ENV"
+          echo "LATEST_TAGS=$latest_tags" >> "$GITHUB_ENV"
 
       - name: Compare tags and output values
         id: check-tags
@@ -159,35 +161,35 @@ jobs:
   
           if [ -z "$LATEST_TAGS" ] && [ -z "$PREV_TAGS" ]; then
             echo "Tags not exist."
-            echo "NEW_TAGS=''" | tee -a "$GITHUB_OUTPUT"
-            echo "DEL_TAGS=''" | tee -a "$GITHUB_OUTPUT"
+            echo "NEW_TAGS=''" >> "$GITHUB_OUTPUT"
+            echo "DEL_TAGS=''" >> "$GITHUB_OUTPUT"
           elif [ -z "$LATEST_TAGS" ] && [ -n "$PREV_TAGS" ]; then
             echo "All tags were eliminated."
-            echo "NEW_TAGS=''" | tee -a "$GITHUB_OUTPUT"
-            echo "DEL_TAGS=$PREV_TAGS" | tee -a "$GITHUB_OUTPUT"
+            echo "NEW_TAGS=''" >> "$GITHUB_OUTPUT"
+            echo "DEL_TAGS=$PREV_TAGS" >> "$GITHUB_OUTPUT"
           elif [ -n "$LATEST_TAGS" ] && [ -z "$PREV_TAGS" ]; then
             echo "New tags detected: $LATEST_TAGS"
-            echo "NEW_TAGS=$LATEST_TAGS" | tee -a "$GITHUB_OUTPUT"
-            echo "DEL_TAGS=''" | tee -a "$GITHUB_OUTPUT"
+            echo "NEW_TAGS=$LATEST_TAGS" >> "$GITHUB_OUTPUT"
+            echo "DEL_TAGS=''" >> "$GITHUB_OUTPUT"
           else
-            added_tags=$(jq -n --argjson a "$LATEST_TAGS" --argjson b "$PREV_TAGS" '$a - $b' | if length == 0 then [] else . end')
-            removed_tags=$(jq -n --argjson a "$PREV_TAGS" --argjson b "$LATEST_TAGS" '$a - $b' | if length == 0 then [] else . end')
+            added_tags=$(jq -n --argjson a "$LATEST_TAGS" --argjson b "$PREV_TAGS" '$a - $b | if length == 0 then [] else . end')
+            removed_tags=$(jq -n --argjson a "$PREV_TAGS" --argjson b "$LATEST_TAGS" '$a - $b | if length == 0 then [] else . end')
 
             if [ "$added_tags" = "[]" ] && [ "$removed_tags" = "[]" ]; then
               echo "New tags not found in this sync."
-              echo "NEW_TAGS=''" | tee -a "$GITHUB_OUTPUT"
-              echo "DEL_TAGS=''" | tee -a "$GITHUB_OUTPUT"
+              echo "NEW_TAGS=''" >> "$GITHUB_OUTPUT"
+              echo "DEL_TAGS=''" >> "$GITHUB_OUTPUT"
             elif [ "$removed_tags" = "[]" ]; then
               echo "New tags detected: $added_tags"
-              echo "NEW_TAGS=$added_tags" | tee -a "$GITHUB_OUTPUT"
-              echo "DEL_TAGS=''" | tee -a "$GITHUB_OUTPUT"
+              echo "NEW_TAGS=$added_tags" >> "$GITHUB_OUTPUT"
+              echo "DEL_TAGS=''" >> "$GITHUB_OUTPUT"
             elif [ "$added_tags" = "[]" ]; then
               echo "Old tags removed: $removed_tags"
-              echo "NEW_TAGS=''" | tee -a "$GITHUB_OUTPUT"
-              echo "DEL_TAGS=$removed_tags" | tee -a "$GITHUB_OUTPUT"
+              echo "NEW_TAGS=''" >> "$GITHUB_OUTPUT"
+              echo "DEL_TAGS=$removed_tags" >> "$GITHUB_OUTPUT"
             else
               echo "Old tags removed: $removed_tags. New tags detected: $added_tags"
-              echo "NEW_TAGS=$added_tags" | tee -a "$GITHUB_OUTPUT"
-              echo "DEL_TAGS=$removed_tags" | tee -a "$GITHUB_OUTPUT"
+              echo "NEW_TAGS=$added_tags" >> "$GITHUB_OUTPUT"
+              echo "DEL_TAGS=$removed_tags" >> "$GITHUB_OUTPUT"
             fi
           fi
