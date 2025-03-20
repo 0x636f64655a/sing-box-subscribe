@@ -98,23 +98,9 @@ jobs:
           ref: ${{ matrix.branches }}
           fetch-depth: 0
 
-      - name: Install semver
-        run: |
-          if ! command -v semver &> /dev/null; then
-            echo "Semver not found. Installing..."
-            npm install -g semver --silent
-          else
-            echo "Semver is already installed."
-          fi
-
-          semver --version
-          git tag -l
-          git tag -l | semver sort
-
       - name: Fetch initial tags
         id: fetch-prev-tags
         run: |
-          #prev_tags=$(git tag -l | semver sort | jq -R -s -c 'split("\n") | map(select(length > 0))')
           prev_tags=$(git tag -l | jq -R -s -c 'split("\n") | map(select(length > 0))')
           echo "PREV_TAGS=$prev_tags" >> "$GITHUB_ENV"
 
@@ -151,7 +137,6 @@ jobs:
       - name: Fetch latest tags
         id: fetch-latest-tags
         run: |
-          #latest_tags=$(git tag -l | semver sort | jq -R -s -c 'split("\n") | map(select(length > 0))')
           latest_tags=$(git tag -l | jq -R -s -c 'split("\n") | map(select(length > 0))')
           echo "LATEST_TAGS=$latest_tags" >> "$GITHUB_ENV"
 
