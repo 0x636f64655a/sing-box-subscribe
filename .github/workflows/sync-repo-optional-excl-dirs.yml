@@ -78,7 +78,7 @@ jobs:
           echo "BRANCHES_JSON=$branches_json" >> "$GITHUB_OUTPUT"
 
   sync_fork:
-    Name: Sync forked repo
+    name: Sync forked repo
     runs-on: ubuntu-latest
     needs: retrieve_upstream_info
     env:
