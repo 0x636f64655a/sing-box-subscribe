@@ -13,6 +13,10 @@ on:
         type: string
         required: true
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   pre-build:
     name: Pre-Build Setup
@@ -24,7 +28,6 @@ jobs:
       repo_contributors: ${{ steps.retrieve_upstream_info.outputs.REPO_CONTRIBUTORS }}
       sbom_format: ${{ steps.sbom-format.outputs.SBOM_FORMAT }}
       build_tags: ${{ steps.build-tags.outputs.BUILD_TAGS }}
-      # New output for platform-tag chunks
       platform_tag_chunks: ${{ steps.create-chunks.outputs.PLATFORM_TAG_CHUNKS }}
     steps:
       - name: Set Up Docker Buildx
