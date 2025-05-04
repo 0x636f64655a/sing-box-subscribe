@@ -145,7 +145,6 @@ jobs:
 
   build-and-push-images:
     name: Build & Push Images to Registries
-    runs-on: ubuntu-latest
     needs:
       - retrieve-info
       - sync-fork
