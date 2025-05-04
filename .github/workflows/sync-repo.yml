@@ -93,7 +93,7 @@ jobs:
       - name: Set Excluded Directory
         id: set-exclude
         env:
-          EXCLUDE_DIRS: ${{ toJson(matrix.excluded_dirs) }}
+          EXCLUDED_DIRS: ${{ toJson(matrix.excluded_dirs) }}
         run: |
           readonly include_all="/*"
           sparse_paths="$include_all\n"
