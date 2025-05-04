@@ -80,7 +80,7 @@ jobs:
     strategy:
       matrix:
         branches: ${{ fromJson(needs.retrieve-info.outputs.UPSTREAM_BRANCHES) }}
-        exclude_dirs:
+        excluded_dirs:
           - '.github/workflows'
     outputs:
       repo_tags: ${{ steps.sync-tags.outputs.REPO_TAGS }}
