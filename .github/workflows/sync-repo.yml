@@ -130,8 +130,6 @@ jobs:
       - retrieve-info
       - sync-fork
     strategy:
-      max-parallel: 1
-      fail-fast: false
       matrix:
         registry: [ghcr, dockerhub]
     uses: ./.github/workflows/build-and-push-docker-images-chunked.yml
