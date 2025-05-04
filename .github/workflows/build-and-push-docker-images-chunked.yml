@@ -32,13 +32,16 @@ jobs:
       - name: Detect Supported Platforms
         id: detect_platforms
         run: |
+          echo "Detecting supported platforms..."
           platforms=$(docker buildx inspect --bootstrap --format '{{ join .Platforms "\n" }}')
-          platforms_json=$(printf '%s\n' $platforms | jq -R . | jq -cs .)
+          
           if [[ -z "$platforms" ]]; then
-            echo "No platforms detected. Exiting..."
-            exit 1
+            echo "No platforms detected. Falling back to linux/amd64"
+            platforms="linux/amd64"
           fi
-
+          
+          # Convert to JSON array properly
+          platforms_json=$(echo "$platforms" | jq -R . | jq -cs .)
           echo "Detected supported platforms: $platforms_json"
           echo "BUILDX_PLATFORMS=$platforms_json" >> "$GITHUB_ENV"
 
@@ -191,22 +194,42 @@ jobs:
       - name: Create Platform-Tag Matrix Chunks
         id: create-chunks
         run: |
-          # Get platforms and tags as arrays
-          platforms_array=$(echo '$BUILDX_PLATFORMS' | jq -c '.')
-          tags_array=$(echo '${{ steps.build-tags.outputs.BUILD_TAGS }}' | jq -c '.')
+          # Get platforms from environment variable
+          if [[ -z "$BUILDX_PLATFORMS" ]]; then
+            echo "Error: BUILDX_PLATFORMS environment variable is empty or not set"
+            exit 1
+          fi
+          
+          # Parse build tags
+          build_tags='${{ steps.build-tags.outputs.BUILD_TAGS }}'
+          if [[ "$build_tags" == "[]" ]]; then
+            echo "No new tags to build. Creating empty matrix to avoid workflow failure."
+            echo "PLATFORM_TAG_CHUNKS=[{\"id\":\"0\",\"combinations\":[]}]" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           
           # Create platform-tag combinations
+          echo "Creating platform-tag combinations..."
           combinations=()
-          for platform in $(echo "$platforms_array" | jq -r '.[]'); do
-            for tag in $(echo "$tags_array" | jq -r '.[]'); do
+          for platform in $(echo "$BUILDX_PLATFORMS" | jq -r '.[]'); do
+            for tag in $(echo "$build_tags" | jq -r '.[]'); do
               combinations+=("{\"platform\":\"$platform\",\"tag\":\"$tag\"}")
             done
           done
           
           # Calculate number of chunks (max 250 jobs per chunk to stay under 256 limit)
           total_combinations=${#combinations[@]}
+          echo "Total combinations: $total_combinations"
+          
+          if [[ $total_combinations -eq 0 ]]; then
+            echo "No platform-tag combinations found. Creating empty matrix."
+            echo "PLATFORM_TAG_CHUNKS=[{\"id\":\"0\",\"combinations\":[]}]" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          
           chunk_size=250
           num_chunks=$(( (total_combinations + chunk_size - 1) / chunk_size ))
+          echo "Creating $num_chunks chunks"
           
           # Create chunks array
           chunks_array="["
