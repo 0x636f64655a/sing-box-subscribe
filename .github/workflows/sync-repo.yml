@@ -5,6 +5,10 @@ on:
     - cron: '0 0 * * *'
   workflow_dispatch:
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   retrieve-info:
     name: Retrieve Repo Info
@@ -67,28 +71,62 @@ jobs:
           echo "Upstream branches JSON array: $branches_json"
           echo "UPSTREAM_BRANCHES=$branches_json" >> "$GITHUB_OUTPUT"
 
-  sync-fork:
-    name: Sync Forked Repo
+  collect-tags:
+    name: Collect Repository Tags
     runs-on: ubuntu-latest
     needs: retrieve-info
     permissions:
-      contents: write
-    strategy:
-      matrix:
-        branches: ${{ fromJson(needs.retrieve-info.outputs.UPSTREAM_BRANCHES) }}
+      contents: read
     outputs:
-      repo_tags: ${{ steps.sync-tags.outputs.REPO_TAGS }}
+      repo_tags: ${{ steps.fetch-tags.outputs.REPO_TAGS }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Sync Tags to Fork Repo
-        id: sync-tags
+      - name: Fetch Tags From Upstream
+        id: fetch-tags
         env:
           UPSTREAM_URL: https://github.com/${{ needs.retrieve-info.outputs.upstream_full_name }}.git
-          SYNC_BRANCH: ${{ matrix.branches }}
+        run: |
+          git config --global user.name "github-actions"
+          git config --global user.email "github-actions@github.com"
+
+          if ! git remote get-url upstream &> /dev/null; then
+            git remote add upstream "$UPSTREAM_URL"
+          fi
+
+          git fetch --tags upstream || { echo "Failed to fetch tags"; exit 1; }
+          tags=$(git tag -l)
+          
+          if [ -z "$tags" ]; then
+            echo "No tags found in upstream repository."
+            echo "ALL_TAGS=[]" >> "$GITHUB_OUTPUT"
+          else
+            tags_json=$(git tag --sort=creatordate | jq -R . | jq -cs .)
+            echo "REPO_TAGS=$tags_json" >> "$GITHUB_OUTPUT"
+          fi
+
+  sync-fork:
+    name: Sync Forked Repo
+    runs-on: ubuntu-latest
+    needs: [retrieve-info, collect-tags]
+    permissions:
+      contents: write
+    strategy:
+      matrix:
+        branches: ${{ fromJson(needs.retrieve-info.outputs.UPSTREAM_BRANCHES) }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Sync Branch and Push
+        env:
+          UPSTREAM_URL: https://github.com/${{ needs.retrieve-info.outputs.upstream_full_name }}.git
+          UPSTREAM_BRANCHES: ${{ matrix.branches }}
         run: |
           git config --global user.name "github-actions"
           git config --global user.email "github-actions@github.com"
@@ -102,38 +140,37 @@ jobs:
           !.github/workflows/
           EOF
 
-          git fetch --tags upstream || { echo "Failed to fetch tags"; exit 1; }
-          echo "Fetched tags: $(git tag -l)"
-
-          if git show-ref --verify --quiet "refs/heads/$SYNC_BRANCH"; then
-            git checkout "$SYNC_BRANCH"
+          if git show-ref --verify --quiet "refs/heads/$UPSTREAM_BRANCHES"; then
+            git checkout "$UPSTREAM_BRANCHES"
           else
-            git checkout -b "$SYNC_BRANCH" "upstream/$SYNC_BRANCH"
+            git checkout -b "$UPSTREAM_BRANCHES" "upstream/$UPSTREAM_BRANCHES"
           fi
 
-          git pull --rebase upstream "$SYNC_BRANCH"
-          git push origin "$SYNC_BRANCH"
-
+          git pull --rebase upstream "$UPSTREAM_BRANCHES"
+          git push origin "$UPSTREAM_BRANCHES"
+          
+      - name: Push Tags
+        if: ${{ matrix.branches == needs.retrieve-info.outputs.upstream_default_branch }}
+        run: |
+          # Only push tags once on the default branch iteration
           tag_count=$(git tag -l | wc -l)
           if [ "$tag_count" -gt 0 ]; then
             git push origin --tags
-            tags_json=$(git tag --sort=creatordate | jq -R . | jq -cs .)
-            echo "REPO_TAGS=$tags_json" >> "$GITHUB_OUTPUT"
           else
-            echo "No tags to sync."
-            echo "REPO_TAGS=[]" >> "$GITHUB_OUTPUT"
+            echo "No tags to push."
           fi
 
   build-and-push-images:
     name: Build & Push Images to Registries
     needs:
       - retrieve-info
+      - collect-tags
       - sync-fork
     strategy:
       matrix:
         registry: [ghcr, dockerhub]
     uses: ./.github/workflows/build-and-push-docker-images-chunked.yml
     with:
-      repo_tags: ${{ fromJson(needs.sync-fork.outputs.repo_tags) }}
+      repo_tags: ${{ needs.collect-tags.outputs.repo_tags }}
       registry: ${{ matrix.registry }}
       upstream_full_name: ${{ needs.retrieve-info.outputs.upstream_full_name }}
