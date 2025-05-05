@@ -33,14 +33,13 @@ jobs:
         id: detect_platforms
         run: |
           echo "Detecting supported platforms..."
-          platforms=$(docker buildx inspect --bootstrap --format '{{ join .Platforms "\n" }}')
+          platforms=$(docker buildx inspect | grep "Platforms:" | sed 's/Platforms: //g' | tr ',' '\n')
           
           if [[ -z "$platforms" ]]; then
             echo "No platforms detected. Falling back to linux/amd64"
             platforms="linux/amd64"
           fi
           
-          # Convert to JSON array properly
           platforms_json=$(echo "$platforms" | jq -R . | jq -cs .)
           echo "Detected supported platforms: $platforms_json"
           echo "BUILDX_PLATFORMS=$platforms_json" >> "$GITHUB_ENV"
@@ -301,13 +300,8 @@ jobs:
             platform=$(echo "$combination" | jq -r '.platform')
             tag=$(echo "$combination" | jq -r '.tag')
             
-            echo "Building for platform: $platform, tag: $tag"
-            
-            # Generate metadata for this specific platform-tag
-            meta_json=$(docker buildx imagetools inspect \
-              --format '{{ json . }}' \
-              ghcr.io/${{ github.actor }}/${{ github.event.repository.name }}:latest 2>/dev/null || echo "{}")
-            
+            echo "Building for platform: $platform, tag: $tag"          
+      
             # Build and push
             docker buildx build \
               --platform $platform \
