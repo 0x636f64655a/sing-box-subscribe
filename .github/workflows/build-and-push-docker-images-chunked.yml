@@ -19,6 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      packages: read
     outputs:
       repo_license: ${{ steps.retrieve_upstream_info.outputs.REPO_LICENSE }}
       repo_contributors: ${{ steps.retrieve_upstream_info.outputs.REPO_CONTRIBUTORS }}
@@ -33,13 +34,13 @@ jobs:
         id: detect_platforms
         run: |
           echo "Detecting supported platforms..."
-          platforms=$(docker buildx inspect | grep "Platforms:" | sed 's/Platforms: //g' | tr ',' '\n')
+          platforms=$(docker buildx inspect | grep "Platforms:" | sed 's/Platforms: //g' | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
           
           if [[ -z "$platforms" ]]; then
             echo "No platforms detected. Falling back to linux/amd64"
             platforms="linux/amd64"
           fi
-          
+
           platforms_json=$(echo "$platforms" | jq -R . | jq -cs .)
           echo "Detected supported platforms: $platforms_json"
           echo "BUILDX_PLATFORMS=$platforms_json" >> "$GITHUB_ENV"
@@ -68,46 +69,10 @@ jobs:
 
       - name: Determine New Tags to Build
         id: build-tags
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if [[ "${{ inputs.registry }}" == "dockerhub" ]]; then
-            echo "Preparing tags for Docker Hub..."
-            registry_tags=()
-            url="https://hub.docker.com/v2/repositories/${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}/tags?page_size=100"
-
-            while [ -n "$url" ]; do
-              response=$(curl -s "$url")
-
-              if echo "$response" | jq -e 'has("message")' >/dev/null; then
-                echo "API error from Docker Hub: $(echo "$response" | jq -r '.message')"
-                exit 1
-              fi
-
-              tags=$(echo "$response" | jq -e -r '.results[]?.name // empty' 2>/dev/null)
-              jq_status=$?
-
-              if [[ $jq_status -ne 0 ]]; then
-                echo "Error: Failed to parse expected tag data from Docker Hub response."
-                echo "Raw response was: $response"
-                exit 1
-              fi
-
-              readarray -t current_page_tags <<< "$tags"
-              echo "Found ${#current_page_tags[@]} tags on this page."
-
-              if [ ${#current_page_tags[@]} -eq 0 ]; then
-                break
-              fi
-
-              registry_tags+=("${current_page_tags[@]}")
-
-              next_url=$(echo "$response" | jq -r '.next // empty')
-              if [ -z "$next_url" ]; then
-                break
-              fi
-              url="$next_url"
-            done
-
-          elif [[ "${{ inputs.registry }}" == "ghcr" ]]; then
+          if [[ "${{ inputs.registry }}" == "ghcr" ]]; then
             echo "Preparing tags for GHCR..."
             page=1
             registry_tags=()
@@ -134,7 +99,7 @@ jobs:
 
             while :; do
               echo "Fetching GHCR tags (page $page)..."
-              response=$(curl -s "$api_url_base/packages/container/${{ github.event.repository.name }}/versions?per_page=100&page=$page")
+              response=$(curl -s -H "Authorization: Bearer $GH_TOKEN" "$api_url_base/packages/container/${{ github.event.repository.name }}/versions?per_page=100&page=$page")
 
               # Check for API error
               if echo "$response" | jq -e 'has("message")' >/dev/null; then
@@ -189,6 +154,44 @@ jobs:
             echo "No new tags found."
             echo "BUILD_TAGS=[]" >> "$GITHUB_OUTPUT"
           fi
+
+          elif [[ "${{ inputs.registry }}" == "dockerhub" ]]; then
+            echo "Preparing tags for Docker Hub..."
+            registry_tags=()
+            url="https://hub.docker.com/v2/repositories/${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}/tags?page_size=100"
+
+            while [ -n "$url" ]; do
+              response=$(curl -s "$url")
+
+              if echo "$response" | jq -e 'has("message")' >/dev/null; then
+                echo "API error from Docker Hub: $(echo "$response" | jq -r '.message')"
+                exit 1
+              fi
+
+              tags=$(echo "$response" | jq -e -r '.results[]?.name // empty' 2>/dev/null)
+              jq_status=$?
+
+              if [[ $jq_status -ne 0 ]]; then
+                echo "Error: Failed to parse expected tag data from Docker Hub response."
+                echo "Raw response was: $response"
+                exit 1
+              fi
+
+              readarray -t current_page_tags <<< "$tags"
+              echo "Found ${#current_page_tags[@]} tags on this page."
+
+              if [ ${#current_page_tags[@]} -eq 0 ]; then
+                break
+              fi
+
+              registry_tags+=("${current_page_tags[@]}")
+
+              next_url=$(echo "$response" | jq -r '.next // empty')
+              if [ -z "$next_url" ]; then
+                break
+              fi
+              url="$next_url"
+            done
       
       - name: Create Platform-Tag Matrix Chunks
         id: create-chunks
